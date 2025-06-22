@@ -183,6 +183,10 @@ public class DataStream<T> {
      * @return The cleaned Function
      */
     protected <F> F clean(F f) {
+        // 在 Flink 中，可以通过启用闭包清理（Closure Cleaner）来自动移除不必要的外部引用。
+        // Java 中的匿名类和 Lambda 表达式可能会捕获外部作用域中的变量，从而导致序列化问题。
+        // 如果捕获了不可序列化的对象，分布式框架（如 Flink）在传输任务时会失败。为了解决这个问题，可以避免捕获不可序列化的对象、使用静态方法或实例方法，或者启用闭包清理机制。
+        // 这里判断函数f能不能序列化，也是非常简单粗暴，直接尝试序列化，不成功就是不能序列化
         return getExecutionEnvironment().clean(f);
     }
 
@@ -459,6 +463,9 @@ public class DataStream<T> {
 
         TypeInformation<R> outType =
                 TypeExtractor.getFlatMapReturnTypes(
+                        // 闭包清理
+                        // Java 中的匿名类和 Lambda 表达式可能会捕获外部作用域中的变量，从而导致序列化问题
+                        // 这里的clean()，是移除算子中不必要的外部引用
                         clean(flatMapper), getType(), Utils.getCallLocationName(), true);
 
         return flatMap(flatMapper, outType);

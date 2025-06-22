@@ -81,6 +81,7 @@ public class WordCount {
         // Create the execution environment. This is the main entrypoint
         // to building a Flink application.
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
 
         // For async state, by default we will use the forst state backend.
         if (params.isAsyncState()) {
@@ -198,7 +199,7 @@ public class WordCount {
 
             // emit the pairs
             for (String token : tokens) {
-                if (token.length() > 0) {
+                if (!token.isEmpty()) {
                     out.collect(new Tuple2<>(token, 1));
                 }
             }
