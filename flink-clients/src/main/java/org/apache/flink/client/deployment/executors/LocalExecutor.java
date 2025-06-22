@@ -95,7 +95,7 @@ public class LocalExecutor implements PipelineExecutor {
 
         final StreamGraph streamGraph =
                 PipelineExecutorUtils.getStreamGraph(pipeline, configuration);
-
+        // 序列化算子
         streamGraph.serializeUserDefinedInstances();
         return PerJobMiniClusterFactory.createWithFactory(effectiveConfig, miniClusterFactory)
                 .submitJob(streamGraph, userCodeClassloader)

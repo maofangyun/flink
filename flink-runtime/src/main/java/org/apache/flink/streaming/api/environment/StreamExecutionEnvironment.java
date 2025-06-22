@@ -1837,6 +1837,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     public JobExecutionResult execute(String jobName) throws Exception {
         final List<Transformation<?>> originalTransformations = new ArrayList<>(transformations);
+        // 创建并返回数据流图
         StreamGraph streamGraph = getStreamGraph();
         if (jobName != null) {
             streamGraph.setJobName(jobName);
@@ -2032,6 +2033,10 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @Internal
     public StreamGraph getStreamGraph(boolean clearTransformations) {
+        // 这里是根据Transformation数据结构，生成逻辑数据流图，后续根据数据流图生成任务图
+        // 数据流图主要是包含了StreamNode和StreamEdge
+        // 每一个StreamNode都包含了一个inEdges和outEdges
+        // StreamEdge的主要作用就是标识出数据的流向和分区策略
         final StreamGraph streamGraph = getStreamGraph(transformations);
         if (clearTransformations) {
             transformations.clear();
