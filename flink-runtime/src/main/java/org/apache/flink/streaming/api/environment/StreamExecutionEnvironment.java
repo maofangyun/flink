@@ -1874,7 +1874,8 @@ public class StreamExecutionEnvironment implements AutoCloseable {
 
         try {
             final JobExecutionResult jobExecutionResult;
-
+            // 附加模式：客户端与作业执行保持紧密连接。客户端会一直等待作业执行完成，在此期间，客户端进程不能关闭，一旦关闭，作业也会停止（适合开发调试环境）
+            // 分离模式：客户端提交作业后会立即返回，不会等待作业执行完成。作业在集群上独立运行，即便客户端进程关闭，作业也会继续执行（生产环境）
             if (configuration.get(DeploymentOptions.ATTACHED)) {
                 jobExecutionResult = jobClient.getJobExecutionResult().get();
             } else {
