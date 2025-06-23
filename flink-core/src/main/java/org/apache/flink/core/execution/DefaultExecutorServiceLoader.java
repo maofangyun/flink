@@ -53,7 +53,8 @@ public class DefaultExecutorServiceLoader implements PipelineExecutorServiceLoad
     @Override
     public PipelineExecutorFactory getExecutorFactory(final Configuration configuration) {
         checkNotNull(configuration);
-
+        // 通过SPI机制加载所有的PipelineExecutorFactory实现类，然后遍历所有的实现类，
+        // 检查是否与configuration兼容，如果兼容则返回该实现类的实例
         final ServiceLoader<PipelineExecutorFactory> loader =
                 ServiceLoader.load(PipelineExecutorFactory.class);
 
@@ -61,6 +62,12 @@ public class DefaultExecutorServiceLoader implements PipelineExecutorServiceLoad
         final Iterator<PipelineExecutorFactory> factories = loader.iterator();
         while (factories.hasNext()) {
             try {
+                // LocalExecutorFactory -> 通常用于开发和测试阶段，支持会话模式和单作业模式
+                // RemoteExecutorFactory -> 通常用于生产环境，支持会话模式和单作业模式
+                // YarnSessionClusterExecutorFactory -> 通常用于YARN 集群生产环境，支持会话模式
+                // KubernetesSessionClusterExecutorFactory -> 通常用于Kubernetes 集群生产环境，支持会话模式
+                // WebSubmissionExecutorFactory -> 通常用于Web页面提交任务，支持全部的作业模式
+                // 以上都是实现了PipelineExecutorFactory接口的类
                 final PipelineExecutorFactory factory = factories.next();
                 if (factory != null && factory.isCompatibleWith(configuration)) {
                     compatibleFactories.add(factory);
