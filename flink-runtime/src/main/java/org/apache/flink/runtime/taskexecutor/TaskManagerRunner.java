@@ -778,7 +778,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                                                                     .toString()
                                                                     .substring(0, 6)
                                                     : rpcAddress
-                                                            + ":"
+                                                            + "@"
                                                             + rpcPort
                                                             + "-"
                                                             + new AbstractID()

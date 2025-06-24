@@ -84,15 +84,37 @@ taskmanager:
   # configured separately for each TaskManager.
   host: localhost
   # The number of task slots that each TaskManager offers. Each slot runs one parallel pipeline.
-  numberOfTaskSlots: 1
+  numberOfTaskSlots: 2
   memory:
+    jvm-metaspace:
+      size: 256m
+    jvm-overhead:
+      min: 256m
+      max: 256m
+    network:
+      min: 128m
+      max: 128m
+    managed:
+      size: 2048m
+    task:
+      off-heap:
+        size: 1024m
+      heap:
+        size: 1024m
+    framework:
+      off-heap:
+        size: 512m
+      heap:
+        size: 512m
     process:
       # The total process memory size for the TaskManager.
       #
       # Note this accounts for all memory usage within the TaskManager process, including JVM metaspace and other overhead.
       # To exclude JVM metaspace and overhead, please, use total Flink memory size instead of 'taskmanager.memory.process.size'.
       # It is not recommended to set both 'taskmanager.memory.process.size' and Flink memory.
-      size: 1728m
+      size: 2048m
+  cpu:
+    cores: 8
 
 parallelism:
   # The parallelism used for programs that did not specify and other parallelism.
@@ -199,8 +221,8 @@ rest:
 # Advanced
 #==============================================================================
 
-# io:
-#   tmp:
+io:
+  tmp:
 #     # Override the directories for temporary files. If not specified, the
 #     # system-specific Java temporary directory (java.io.tmpdir property) is taken.
 #     #
@@ -215,7 +237,7 @@ rest:
 #     # thread. You can include the same directory multiple times in order to create
 #     # multiple I/O threads against that directory. This is for example relevant for
 #     # high-throughput RAIDs.
-#     dirs: /tmp
+     dirs: D:\tmp
 
 # classloader:
 #   resolve:
