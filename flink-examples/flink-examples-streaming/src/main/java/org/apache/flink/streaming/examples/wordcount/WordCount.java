@@ -22,7 +22,9 @@ import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.StateBackendOptions;
 import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.connector.file.src.FileSource;
@@ -77,10 +79,23 @@ public class WordCount {
 
     public static void main(String[] args) throws Exception {
         final CLI params = CLI.fromArgs(args);
+        // 创建配置对象
+        Configuration configuration = new Configuration();
+
+        // **配置 JobManager 的 RPC 地址和端口**
+        // 假设你的 JobManager 运行在 localhost (127.0.0.1) 的默认 RPC 端口 6123
+        // 这个端口用于内部通信和提交作业
+        configuration.set(JobManagerOptions.ADDRESS, "127.0.0.1");
+        configuration.set(JobManagerOptions.PORT, 6123);
+
+        // **配置 JobManager 的 REST API 地址和端口 (Web UI 和外部提交)**
+        // 假设你的 JobManager 的 Web UI 运行在 localhost 的默认 REST 端口 8081
+        configuration.set(RestOptions.BIND_ADDRESS, "127.0.0.1"); // 或者直接 "localhost"
+        configuration.set(RestOptions.BIND_PORT, "8081");
 
         // Create the execution environment. This is the main entrypoint
         // to building a Flink application.
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createRemoteEnvironment("localhost", 8081, configuration);
         env.setParallelism(1);
 
         // For async state, by default we will use the forst state backend.
