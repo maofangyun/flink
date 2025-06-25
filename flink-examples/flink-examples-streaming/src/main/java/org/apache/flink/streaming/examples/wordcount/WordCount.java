@@ -17,27 +17,16 @@
 
 package org.apache.flink.streaming.examples.wordcount;
 
-import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.JobManagerOptions;
-import org.apache.flink.configuration.MemorySize;
-import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.StateBackendOptions;
-import org.apache.flink.connector.file.sink.FileSink;
-import org.apache.flink.connector.file.src.FileSource;
-import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.DefaultRollingPolicy;
 import org.apache.flink.streaming.examples.wordcount.util.CLI;
 import org.apache.flink.streaming.examples.wordcount.util.WordCountData;
 import org.apache.flink.util.Collector;
-
-import java.time.Duration;
 
 import static org.apache.flink.runtime.state.StateBackendLoader.FORST_STATE_BACKEND_NAME;
 
@@ -79,23 +68,9 @@ public class WordCount {
 
     public static void main(String[] args) throws Exception {
         final CLI params = CLI.fromArgs(args);
-        // 创建配置对象
-        Configuration configuration = new Configuration();
-
-        // **配置 JobManager 的 RPC 地址和端口**
-        // 假设你的 JobManager 运行在 localhost (127.0.0.1) 的默认 RPC 端口 6123
-        // 这个端口用于内部通信和提交作业
-        configuration.set(JobManagerOptions.ADDRESS, "127.0.0.1");
-        configuration.set(JobManagerOptions.PORT, 6123);
-
-        // **配置 JobManager 的 REST API 地址和端口 (Web UI 和外部提交)**
-        // 假设你的 JobManager 的 Web UI 运行在 localhost 的默认 REST 端口 8081
-        configuration.set(RestOptions.BIND_ADDRESS, "127.0.0.1"); // 或者直接 "localhost"
-        configuration.set(RestOptions.BIND_PORT, "8081");
-
         // Create the execution environment. This is the main entrypoint
         // to building a Flink application.
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createRemoteEnvironment("localhost", 8081, configuration);
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
 
         // For async state, by default we will use the forst state backend.
@@ -132,22 +107,7 @@ public class WordCount {
         // available in the Flink UI.
         env.getConfig().setGlobalJobParameters(params);
 
-        DataStream<String> text;
-        if (params.getInputs().isPresent()) {
-            // Create a new file source that will read files from a given set of directories.
-            // Each file will be processed as plain text and split based on newlines.
-            FileSource.FileSourceBuilder<String> builder =
-                    FileSource.forRecordStreamFormat(
-                            new TextLineInputFormat(), params.getInputs().get());
-
-            // If a discovery interval is provided, the source will
-            // continuously watch the given directories for new files.
-            params.getDiscoveryInterval().ifPresent(builder::monitorContinuously);
-
-            text = env.fromSource(builder.build(), WatermarkStrategy.noWatermarks(), "file-input");
-        } else {
-            text = env.fromData(WordCountData.WORDS).name("in-memory-input");
-        }
+        DataStream<String> text = env.fromData(WordCountData.WORDS).name("in-memory-input");
 
         KeyedStream<Tuple2<String, Integer>, String> keyedStream =
                 // The text lines read from the source are split into words
@@ -172,24 +132,7 @@ public class WordCount {
                         .sum(1)
                         .name("counter");
 
-        if (params.getOutput().isPresent()) {
-            // Given an output directory, Flink will write the results to a file
-            // using a simple string encoding. In a production environment, this might
-            // be something more structured like CSV, Avro, JSON, or Parquet.
-            counts.sinkTo(
-                            FileSink.<Tuple2<String, Integer>>forRowFormat(
-                                            params.getOutput().get(), new SimpleStringEncoder<>())
-                                    .withRollingPolicy(
-                                            DefaultRollingPolicy.builder()
-                                                    .withMaxPartSize(MemorySize.ofMebiBytes(1))
-                                                    .withRolloverInterval(Duration.ofSeconds(10))
-                                                    .build())
-                                    .build())
-                    .name("file-sink");
-        } else {
-            counts.print().name("print-sink");
-        }
-
+        counts.print().name("print-sink");
         // Apache Flink applications are composed lazily. Calling execute
         // submits the Job and begins processing.
         env.execute("WordCount");
