@@ -70,16 +70,32 @@ public class DetachedApplicationRunner implements ApplicationRunner {
         return tryExecuteJobs(dispatcherGateway, program, configuration);
     }
 
+    /**
+     * 尝试执行应用程序中的作业，并返回作业ID列表。
+     * 该方法会将应用程序以分离模式提交，不等待应用程序完成。
+     *
+     * @param dispatcherGateway 调度器网关，用于与调度器进行交互
+     * @param program 打包好的用户程序
+     * @param configuration 应用程序的配置信息
+     * @return 执行的作业ID列表
+     */
     private List<JobID> tryExecuteJobs(
             final DispatcherGateway dispatcherGateway,
             final PackagedProgram program,
             final Configuration configuration) {
+        // 将部署模式设置为分离模式，即不等待应用程序完成
         configuration.set(DeploymentOptions.ATTACHED, false);
 
+        // 初始化一个列表，用于存储应用程序中所有作业的ID
         final List<JobID> applicationJobIds = new ArrayList<>();
+        // 创建一个管道执行器服务加载器，用于加载执行器服务，并将作业ID列表和调度器网关传递给它
         final PipelineExecutorServiceLoader executorServiceLoader =
                 new WebSubmissionExecutorServiceLoader(applicationJobIds, dispatcherGateway);
-
+        // 返回执行的作业ID列表
+            // 抛出Flink运行时异常，封装原始异常信息
+            // 记录警告日志，表明无法执行应用程序，并打印异常信息
+            // 调用ClientUtils的executeProgram方法来执行用户程序
+            // 传入执行器服务加载器、配置信息、用户程序、是否强制单作业执行以及是否抑制标准输出
         try {
             ClientUtils.executeProgram(
                     executorServiceLoader, configuration, program, enforceSingleJobExecution, true);

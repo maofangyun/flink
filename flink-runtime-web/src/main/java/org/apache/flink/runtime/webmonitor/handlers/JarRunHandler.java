@@ -85,6 +85,14 @@ public class JarRunHandler
         this.applicationRunner = applicationRunnerSupplier.get();
     }
 
+    /**
+     * 处理提交作业的请求，异步执行作业并返回响应体。
+     *
+     * @param request 包含作业提交请求信息的处理器请求对象
+     * @param gateway 调度器网关，用于与调度器进行交互
+     * @return 一个 CompletableFuture 对象，异步计算作业提交的响应体
+     * @throws RestHandlerException 当处理请求过程中出现异常时抛出
+     */
     @Override
     @VisibleForTesting
     public CompletableFuture<JarRunResponseBody> handleRequest(
@@ -92,36 +100,51 @@ public class JarRunHandler
             @Nonnull final DispatcherGateway gateway)
             throws RestHandlerException {
 
+        // 基于已有的配置创建一个新的有效配置对象
         final Configuration effectiveConfiguration = new Configuration(configuration);
+        // 将部署模式设置为分离模式，即不等待应用程序完成
         effectiveConfiguration.set(DeploymentOptions.ATTACHED, false);
+        // 将执行目标设置为嵌入式执行器
         effectiveConfiguration.set(DeploymentOptions.TARGET, EmbeddedExecutor.NAME);
 
+        // 从请求中提取 Jar 处理上下文
         final JarHandlerContext context = JarHandlerContext.fromRequest(request, jarDir, log);
+        // 将上下文信息应用到有效配置中
         context.applyToConfiguration(effectiveConfiguration, request);
+        // 将从请求中获取的保存点恢复设置应用到有效配置中
         SavepointRestoreSettings.toConfiguration(
                 getSavepointRestoreSettings(request, effectiveConfiguration),
                 effectiveConfiguration);
 
+        // 根据上下文和有效配置创建打包好的用户程序
         final PackagedProgram program = context.toPackagedProgram(effectiveConfiguration);
 
+        // 异步执行应用程序，并返回作业 ID 列表
         return CompletableFuture.supplyAsync(
+                        // 调用 applicationRunner 的 run 方法执行作业
                         () -> applicationRunner.run(gateway, program, effectiveConfiguration),
+                        // 使用指定的执行器执行异步任务
                         executor)
                 .handle(
+                        // 在 CompletableFuture 完成后处理结果或异常
                         (jobIds, throwable) -> {
+                            // 关闭打包好的用户程序，释放资源
                             program.close();
                             if (throwable != null) {
+                                // 若执行过程中出现异常，抛出包装后的异常
                                 throw new CompletionException(
                                         new RestHandlerException(
                                                 "Could not execute application.",
                                                 HttpResponseStatus.BAD_REQUEST,
                                                 throwable));
                             } else if (jobIds.isEmpty()) {
+                                // 若作业 ID 列表为空，说明应用程序中没有作业，抛出异常
                                 throw new CompletionException(
                                         new RestHandlerException(
                                                 "No jobs included in application.",
                                                 HttpResponseStatus.BAD_REQUEST));
                             }
+                            // 若一切正常，返回包含第一个作业 ID 的响应体
                             return new JarRunResponseBody(jobIds.get(0));
                         });
     }
