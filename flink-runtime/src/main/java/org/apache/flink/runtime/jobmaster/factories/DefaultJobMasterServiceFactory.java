@@ -103,7 +103,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
 
     private JobMasterService internalCreateJobMasterService(
             UUID leaderSessionId, OnCompletionActions onCompletionActions) throws Exception {
-
+        // 创建JobMaster的地方，标记一下
         final JobMaster jobMaster =
                 new JobMaster(
                         rpcService,
