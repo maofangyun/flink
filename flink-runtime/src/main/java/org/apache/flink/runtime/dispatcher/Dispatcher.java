@@ -519,16 +519,31 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     // RPCs
     // ------------------------------------------------------
 
+    /**
+     * 提交作业到调度器。该方法会检查作业是否已处于全局终止状态，或者是否已经存在未终止的同名作业，
+     * 还会检查作业是否部分配置了资源。根据不同的检查结果，会进行相应的处理，
+     * 若作业符合提交条件，则调用内部方法进行作业提交。
+     *
+     * @param executionPlan 作业的执行计划
+     * @param timeout 提交作业的超时时间
+     * @return 一个 CompletableFuture，当作业成功提交时返回 Acknowledge，若提交失败则包含异常信息
+     */
     @Override
     public CompletableFuture<Acknowledge> submitJob(ExecutionPlan executionPlan, Duration timeout) {
+        // 从执行计划中获取作业的唯一标识符
         final JobID jobID = executionPlan.getJobID();
+        // 使用 MdcUtils 为当前作业设置上下文信息，方便日志追踪，在 try 块结束后自动清除上下文
         try (MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(jobID))) {
+            // 记录接收到作业提交请求的日志，包含作业名称和作业 ID
             log.info("Received job submission '{}' ({}).", executionPlan.getName(), jobID);
         }
+        // 异步检查作业是否已处于全局终止状态
         return isInGloballyTerminalState(jobID)
                 .thenComposeAsync(
+                        // 根据作业是否已终止的检查结果进行不同处理
                         isTerminated -> {
                             if (isTerminated) {
+                                // 若作业已处于全局终止状态，记录警告日志并抛出重复提交异常
                                 log.warn(
                                         "Ignoring job submission '{}' ({}) because the job already "
                                                 + "reached a globally-terminal state (i.e. {}) in a "
@@ -544,10 +559,11 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                                                 jobID));
                             } else if (jobManagerRunnerRegistry.isRegistered(jobID)
                                     || submittedAndWaitingTerminationJobIDs.contains(jobID)) {
-                                // job with the given jobID is not terminated, yet
+                                // 若作业已注册或正在等待终止，抛出重复提交异常
                                 return FutureUtils.completedExceptionally(
                                         DuplicateJobSubmissionException.of(jobID));
                             } else if (executionPlan.isPartialResourceConfigured()) {
+                                // 若作业部分配置了资源，抛出作业提交异常
                                 return FutureUtils.completedExceptionally(
                                         new JobSubmissionException(
                                                 jobID,
@@ -555,9 +571,11 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                                                         + "have resources configured. The limitation will be "
                                                         + "removed in future versions."));
                             } else {
+                                // 若作业符合提交条件，调用内部方法进行作业提交
                                 return internalSubmitJob(executionPlan);
                             }
                         },
+                        // 使用作业对应的主线程执行器来异步执行上述操作
                         getMainThreadExecutor(jobID));
     }
 
@@ -589,25 +607,42 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         return jobResultStore.hasJobResultEntryAsync(jobId);
     }
 
+    /**
+     * 内部提交作业的方法，处理作业提交的具体逻辑。
+     * 该方法会对作业图应用并行度覆盖配置，跟踪待处理的作业，并等待之前的作业管理器终止后再提交新作业。
+     *
+     * @param executionPlan 作业的执行计划
+     * @return 一个 CompletableFuture，当作业提交处理完成时返回 Acknowledge，若提交失败则包含异常信息
+     */
     private CompletableFuture<Acknowledge> internalSubmitJob(ExecutionPlan executionPlan) {
+        // 检查执行计划是否为 JobGraph 类型
         if (executionPlan instanceof JobGraph) {
+            // 若为 JobGraph 类型，对其应用并行度覆盖配置
             applyParallelismOverrides((JobGraph) executionPlan);
         }
 
+        // 记录提交作业的日志，包含作业名称和作业 ID
         log.info("Submitting job '{}' ({}).", executionPlan.getName(), executionPlan.getJobID());
 
-        // track as an outstanding job
+        // 将该作业 ID 添加到待终止作业集合中，跟踪未完成的作业
         submittedAndWaitingTerminationJobIDs.add(executionPlan.getJobID());
 
+        // 等待之前的作业管理器终止，然后执行作业持久化和运行操作
         return waitForTerminatingJob(
+                        // persistAndRunJob 方法用于持久化执行计划并运行作业
+                        // 该方法会将执行计划持久化，初始化作业客户端过期时间，然后运行作业
                         executionPlan.getJobID(), executionPlan, this::persistAndRunJob)
+                // 处理作业提交过程中可能出现的异常
                 .handle(
                         (ignored, throwable) ->
+                                // 调用 handleTermination 方法处理作业终止情况，包括异常处理
                                 handleTermination(executionPlan.getJobID(), throwable))
+                // 将 CompletableFuture<CompletableFuture<Acknowledge>> 转换为 CompletableFuture<Acknowledge>
                 .thenCompose(Function.identity())
+                // 无论作业提交成功或失败，都从待终止作业集合中移除该作业 ID
                 .whenComplete(
                         (ignored, throwable) ->
-                                // job is done processing, whether failed or finished
+                                // 作业处理完成，无论失败还是成功，都从跟踪集合中移除该作业 ID
                                 submittedAndWaitingTerminationJobIDs.remove(
                                         executionPlan.getJobID()));
     }
@@ -641,9 +676,19 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         return CompletableFuture.completedFuture(Acknowledge.get());
     }
 
+    /**
+     * 持久化作业执行计划并运行作业。
+     * 该方法会将作业执行计划持久化存储，初始化作业客户端过期时间，然后创建并启动作业管理器运行作业。
+     *
+     * @param executionPlan 作业的执行计划
+     * @throws Exception 若在持久化、初始化或运行作业过程中出现异常
+     */
     private void persistAndRunJob(ExecutionPlan executionPlan) throws Exception {
+        // 将作业执行计划持久化存储，方便后续恢复或查询
         executionPlanWriter.putExecutionPlan(executionPlan);
+        // 初始化作业客户端的过期时间，用于后续检查客户端心跳是否超时
         initJobClientExpiredTime(executionPlan);
+        // 创建作业管理器运行器，以作业提交的类型启动作业
         runJob(createJobMasterRunner(executionPlan), ExecutionType.SUBMISSION);
     }
 
@@ -671,18 +716,31 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 getIoExecutor(dirtyJobResult.getJobId()));
     }
 
+    /**
+     * 运行作业管理器运行器来执行作业，并处理作业完成后的清理工作。
+     *
+     * @param jobManagerRunner 作业管理器运行器，负责管理作业的执行。
+     * @param executionType 作业执行类型，分为提交（SUBMISSION）和恢复（RECOVERY）。
+     * @throws Exception 若在启动作业管理器运行器或注册过程中出现异常。
+     */
     private void runJob(JobManagerRunner jobManagerRunner, ExecutionType executionType)
             throws Exception {
+        // 启动作业管理器运行器，开始执行作业
         jobManagerRunner.start();
+        // 将作业管理器运行器注册到注册表中，方便后续管理和查询
         jobManagerRunnerRegistry.register(jobManagerRunner);
 
+        // 获取作业的唯一标识符
         final JobID jobId = jobManagerRunner.getJobID();
 
+        // 获取作业管理器运行器的结果未来对象，当作业执行完成或失败时会得到通知
         final CompletableFuture<CleanupJobState> cleanupJobStateFuture =
                 jobManagerRunner
                         .getResultFuture()
                         .handleAsync(
+                                // 异步处理作业管理器运行器的结果
                                 (jobManagerRunnerResult, throwable) -> {
+                                    // 检查作业管理器运行器是否仍然在注册表中，确保其生命周期管理正确
                                     Preconditions.checkState(
                                             jobManagerRunnerRegistry.isRegistered(jobId)
                                                     && jobManagerRunnerRegistry.get(jobId)
@@ -690,28 +748,37 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                                             "The job entry in runningJobs must be bound to the lifetime of the JobManagerRunner.");
 
                                     if (jobManagerRunnerResult != null) {
+                                        // 若作业管理器运行器有结果，调用 handleJobManagerRunnerResult 方法处理结果
                                         return handleJobManagerRunnerResult(
                                                 jobManagerRunnerResult, executionType);
                                     } else {
+                                        // 若作业管理器运行器没有结果，说明作业执行失败，记录失败状态
                                         return CompletableFuture.completedFuture(
                                                 jobManagerRunnerFailed(
                                                         jobId, JobStatus.FAILED, throwable));
                                     }
                                 },
+                                // 使用作业对应的主线程执行器处理结果
                                 getMainThreadExecutor(jobId))
+                        // 将 CompletableFuture<CompletableFuture<CleanupJobState>> 转换为 CompletableFuture<CleanupJobState>
                         .thenCompose(Function.identity());
 
+        // 根据作业清理状态执行作业清理操作，并获取作业终止的未来对象
         final CompletableFuture<Void> jobTerminationFuture =
                 cleanupJobStateFuture.thenCompose(
                         cleanupJobState ->
+                                // 调用 removeJob 方法进行作业清理
                                 removeJob(jobId, cleanupJobState)
                                         .exceptionally(
+                                                // 若清理过程中出现异常，记录警告日志
                                                 throwable ->
                                                         logCleanupErrorWarning(jobId, throwable)));
 
+        // 处理作业终止未来对象中未捕获的异常，将异常传递给致命错误处理器
         FutureUtils.handleUncaughtException(
                 jobTerminationFuture,
                 (thread, throwable) -> fatalErrorHandler.onFatalError(throwable));
+        // 注册作业管理器运行器的终止未来对象，以便后续跟踪作业的终止状态
         registerJobManagerRunnerTerminationFuture(jobId, jobTerminationFuture);
     }
 

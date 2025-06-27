@@ -160,9 +160,18 @@ public class JobMasterServiceLeadershipRunner implements JobManagerRunner, Leade
         return terminationFuture;
     }
 
+    /**
+     * 启动领导选举过程，使当前实例参与到领导竞争中。
+     * 此方法会触发领导选举服务开始工作，当当前实例获取领导权时，
+     * 会创建并启动 JobMasterServiceProcess 来管理作业。
+     *
+     * @throws Exception 若在启动领导选举服务过程中出现异常
+     */
     @Override
     public void start() throws Exception {
+        // 记录启动领导选举运行器的调试日志，包含作业的 ID
         LOG.debug("Start leadership runner for job {}.", getJobID());
+        // 调用领导选举服务的方法，开始领导选举过程，并将当前实例作为竞争候选者传入
         leaderElection.startLeaderElection(this);
     }
 
@@ -243,30 +252,51 @@ public class JobMasterServiceLeadershipRunner implements JobManagerRunner, Leade
         }
     }
 
+    /**
+     * 当当前实例被授予领导权时调用此方法。
+     * 若领导选举运行器处于运行状态，将异步启动一个新的 JobMasterServiceProcess 来管理作业。
+     *
+     * @param leaderSessionID 领导会话的唯一标识符，用于标识本次领导权的会话
+     */
     @Override
     public void grantLeadership(UUID leaderSessionID) {
+        // 检查领导选举运行器是否处于运行状态，若是则执行传入的操作
+        // 这里的操作是异步启动一个新的 JobMasterServiceProcess
         runIfStateRunning(
                 () -> startJobMasterServiceProcessAsync(leaderSessionID),
                 "starting a new JobMasterServiceProcess");
     }
 
+
+    /**
+     * 异步启动 JobMasterServiceProcess。该方法会先检查作业是否已有结果，
+     * 根据检查结果决定是处理作业已完成的情况，还是创建新的 JobMasterServiceProcess。
+     * 所有操作都会按顺序执行，确保领导操作的序列化。
+     *
+     * @param leaderSessionId 领导会话的唯一标识符，用于标识本次领导权的会话
+     */
     @GuardedBy("lock")
     private void startJobMasterServiceProcessAsync(UUID leaderSessionId) {
+        // 将当前操作添加到顺序操作链中，确保操作按顺序执行
         sequentialOperation =
                 sequentialOperation.thenCompose(
                         unused ->
+                                // 异步检查作业结果存储中是否已有该作业的结果
                                 jobResultStore
                                         .hasJobResultEntryAsync(getJobID())
                                         .thenCompose(
                                                 hasJobResult -> {
                                                     if (hasJobResult) {
+                                                        // 若作业已有结果，调用 handleJobAlreadyDoneIfValidLeader 方法处理作业已完成的情况
                                                         return handleJobAlreadyDoneIfValidLeader(
                                                                 leaderSessionId);
                                                     } else {
+                                                        // 若作业没有结果，调用 createNewJobMasterServiceProcessIfValidLeader 方法创建新的 JobMasterServiceProcess
                                                         return createNewJobMasterServiceProcessIfValidLeader(
                                                                 leaderSessionId);
                                                     }
                                                 }));
+        // 处理异步操作可能出现的错误，若操作失败，会记录错误信息并处理
         handleAsyncOperationError(sequentialOperation, "Could not start the job manager.");
     }
 

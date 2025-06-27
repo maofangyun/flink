@@ -46,14 +46,24 @@ public class StandaloneLeaderElection implements LeaderElection {
         this.sessionID = sessionID;
     }
 
+    /**
+     * 启动领导者选举过程。由于这是独立模式（非 HA 场景），该方法会直接授予传入的竞争者领导者身份。
+     *
+     * @param contender 参与领导者选举的竞争者
+     * @throws Exception 当已经有领导者竞争者注册时抛出异常
+     */
     @Override
     public void startLeaderElection(LeaderContender contender) throws Exception {
+        // 使用锁保证线程安全，确保在同一时间只有一个线程能修改领导者竞争者的状态
         synchronized (lock) {
+            // 检查是否已经有领导者竞争者注册，如果有则抛出异常
             Preconditions.checkState(
                     leaderContender == null,
                     "No LeaderContender should have been registered with this LeaderElection, yet.");
+            // 将传入的竞争者设置为当前的领导者竞争者
             this.leaderContender = contender;
 
+            // 直接授予当前竞争者领导者身份，并传入会话 ID
             this.leaderContender.grantLeadership(sessionID);
         }
     }

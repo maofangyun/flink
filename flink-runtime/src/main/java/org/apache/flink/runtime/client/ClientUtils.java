@@ -39,39 +39,42 @@ public enum ClientUtils {
     ;
 
     /**
-     * Extracts all files required for the execution from the given {@link ExecutionPlan} and
-     * uploads them using the {@link BlobClient} from the given {@link Supplier}.
+     * 从给定的 {@link ExecutionPlan} 中提取执行所需的所有文件，并使用给定 {@link Supplier} 提供的 {@link BlobClient} 进行上传。
      *
-     * @param executionPlan executionPlan requiring files
-     * @param clientSupplier supplier of blob client to upload files with
-     * @throws FlinkException if the upload fails
+     * @param executionPlan 执行所需文件的执行计划
+     * @param clientSupplier 用于上传文件的 BlobClient 提供者
+     * @throws FlinkException 如果上传失败则抛出此异常
      */
     public static void extractAndUploadExecutionPlanFiles(
             ExecutionPlan executionPlan,
             SupplierWithException<BlobClient, IOException> clientSupplier)
             throws FlinkException {
+        // 从执行计划中提取用户需要上传的 JAR 文件列表
         List<Path> userJars = executionPlan.getUserJars();
+        // 从执行计划中提取用户需要上传的制品信息，将其转换为包含名称和路径的元组集合
         Collection<Tuple2<String, Path>> userArtifacts =
                 executionPlan.getUserArtifacts().entrySet().stream()
+                        // 遍历执行计划中用户制品的键值对，将其转换为包含名称和路径的元组
                         .map(
                                 entry ->
                                         Tuple2.of(
                                                 entry.getKey(),
                                                 new Path(entry.getValue().filePath)))
+                        // 将转换后的元素收集到列表中
                         .collect(Collectors.toList());
 
+        // 调用 uploadExecutionPlanFiles 方法，上传提取出的 JAR 文件和制品
         uploadExecutionPlanFiles(executionPlan, userJars, userArtifacts, clientSupplier);
     }
 
     /**
-     * Uploads the given jars and artifacts required for the execution of the given {@link
-     * ExecutionPlan} using the {@link BlobClient} from the given {@link Supplier}.
+     * 使用给定 Supplier 提供的 BlobClient，上传执行给定 ExecutionPlan 所需的 JAR 文件和制品。
      *
-     * @param executionPlan executionPlan requiring files
-     * @param userJars jars to upload
-     * @param userArtifacts artifacts to upload
-     * @param clientSupplier supplier of blob client to upload files with
-     * @throws FlinkException if the upload fails
+     * @param executionPlan 需要上传文件的执行计划
+     * @param userJars 需要上传的 JAR 文件集合
+     * @param userArtifacts 需要上传的制品集合，每个制品由名称和路径的元组表示
+     * @param clientSupplier 用于提供 BlobClient 的供应商，BlobClient 用于上传文件
+     * @throws FlinkException 如果上传失败则抛出此异常
      */
     public static void uploadExecutionPlanFiles(
             ExecutionPlan executionPlan,
@@ -79,14 +82,20 @@ public enum ClientUtils {
             Collection<Tuple2<String, org.apache.flink.core.fs.Path>> userArtifacts,
             SupplierWithException<BlobClient, IOException> clientSupplier)
             throws FlinkException {
+        // 检查是否有需要上传的 JAR 文件或制品
         if (!userJars.isEmpty() || !userArtifacts.isEmpty()) {
+            // 使用 try-with-resources 语句确保 BlobClient 最终会被关闭
             try (BlobClient client = clientSupplier.get()) {
+                // 上传 JAR 文件并将生成的 BlobKey 设置到执行计划中
                 uploadAndSetUserJars(executionPlan, userJars, client);
+                // 上传制品并将生成的 BlobKey 设置到执行计划中
                 uploadAndSetUserArtifacts(executionPlan, userArtifacts, client);
             } catch (IOException ioe) {
+                // 若上传过程中发生 IO 异常，将其包装为 FlinkException 抛出
                 throw new FlinkException("Could not upload job files.", ioe);
             }
         }
+        // 将用户制品条目写入执行计划的配置中
         executionPlan.writeUserArtifactEntriesToConfiguration();
     }
 
