@@ -184,22 +184,40 @@ public class EmbeddedExecutor implements PipelineExecutor {
                         });
     }
 
+    /**
+     * 异步提交作业到 Dispatcher 网关。
+     * 此方法会先获取 Blob 服务器地址，接着上传执行计划所需的文件，最后提交作业。
+     *
+     * @param configuration Flink 应用程序的配置信息
+     * @param dispatcherGateway 用于提交作业的 Dispatcher 网关
+     * @param streamGraph 要提交的作业的流图
+     * @param rpcTimeout RPC 调用的超时时间
+     * @return 一个 CompletableFuture，完成时返回提交作业的 JobID
+     */
     private static CompletableFuture<JobID> submitJob(
             final Configuration configuration,
             final DispatcherGateway dispatcherGateway,
             final StreamGraph streamGraph,
             final Duration rpcTimeout) {
+        // 检查流图是否为空，若为空则抛出异常
         checkNotNull(streamGraph);
 
+        // 记录日志，提示正在提交带有指定 JobID 的作业
         LOG.info("Submitting Job with JobId={}.", streamGraph.getJobID());
 
+        // 首先获取 Blob 服务器的端口号
         return dispatcherGateway
                 .getBlobServerPort(rpcTimeout)
+                // 根据获取到的端口号和 Dispatcher 网关的主机名创建 Blob 服务器的地址
                 .thenApply(
                         blobServerPort ->
                                 new InetSocketAddress(
                                         dispatcherGateway.getHostname(), blobServerPort))
+                // 基于 Blob 服务器地址进行后续操作
                 .thenCompose(
+                        // 若提取和上传文件或序列化过程中出现异常，将其包装为 CompletionException 抛出
+                        // 序列化用户自定义实例（定义的各种算子），以便在集群中传输和执行
+                        // 从流图中提取执行计划所需的文件，并使用 BlobClient 上传到 Blob 服务器
                         blobServerAddress -> {
                             try {
                                 ClientUtils.extractAndUploadExecutionPlanFiles(
@@ -209,9 +227,10 @@ public class EmbeddedExecutor implements PipelineExecutor {
                             } catch (Exception e) {
                                 throw new CompletionException(e);
                             }
-
+                            // 调用 Dispatcher 网关的 submitJob 方法提交作业
                             return dispatcherGateway.submitJob(streamGraph, rpcTimeout);
                         })
+                // 作业提交成功后，返回流图的 JobID
                 .thenApply(ack -> streamGraph.getJobID());
     }
 }
