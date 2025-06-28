@@ -637,6 +637,9 @@ public class Execution
             // does not block
             // the main thread and sync back to the main thread once submission is completed.
             CompletableFuture.supplyAsync(
+                            // JobMaster向TaskManager提交任务的方法
+                            // 这个方法会返回一个CompletableFuture，当任务提交成功时，会返回一个Acknowledge对象
+                            // 当任务提交失败时，会抛出一个异常
                             () -> taskManagerGateway.submitTask(deployment, rpcTimeout), executor)
                     .thenCompose(Function.identity())
                     .whenCompleteAsync(
