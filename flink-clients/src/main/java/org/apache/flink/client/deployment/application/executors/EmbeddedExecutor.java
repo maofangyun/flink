@@ -228,6 +228,7 @@ public class EmbeddedExecutor implements PipelineExecutor {
                                 throw new CompletionException(e);
                             }
                             // 调用 Dispatcher 网关的 submitJob 方法提交作业
+                            // 由于将flink任务解析成流图是客户端的逻辑，所以这里需要远程调用，将流图提交给flink集群执行
                             return dispatcherGateway.submitJob(streamGraph, rpcTimeout);
                         })
                 // 作业提交成功后，返回流图的 JobID

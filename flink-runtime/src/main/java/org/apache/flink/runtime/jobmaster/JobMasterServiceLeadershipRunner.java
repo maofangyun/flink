@@ -305,17 +305,26 @@ public class JobMasterServiceLeadershipRunner implements JobManagerRunner, Leade
                 leaderSessionId, () -> jobAlreadyDone(leaderSessionId), "check completed job");
     }
 
+    /**
+     * 若当前实例是有效的领导者，则异步创建一个新的 JobMasterServiceProcess 实例。
+     * 该方法会先检查当前实例是否仍拥有领导权，若拥有则执行创建操作。
+     *
+     * @param leaderSessionId 领导会话的唯一标识符，用于标识本次领导权的会话
+     * @return 一个 CompletableFuture，当操作完成时会被标记为完成状态
+     */
     private CompletableFuture<Void> createNewJobMasterServiceProcessIfValidLeader(
             UUID leaderSessionId) {
+        // 调用 runIfValidLeader 方法，检查当前实例是否为有效的领导者
+        // 若有效，则执行创建新 JobMasterServiceProcess 的操作
+        // 若无效，则记录相应日志
         return runIfValidLeader(
                 leaderSessionId,
                 () ->
-                        // the heavy lifting of the JobMasterServiceProcess instantiation is still
-                        // done asynchronously (see
-                        // DefaultJobMasterServiceFactory#createJobMasterService executing the logic
-                        // on the leaderOperation thread in the DefaultLeaderElectionService should
-                        // be, therefore, fine
+                        // JobMasterServiceProcess 实例化的主要工作仍异步执行
+                        // 参考 DefaultJobMasterServiceFactory#createJobMasterService 在
+                        // DefaultLeaderElectionService 的 leaderOperation 线程上执行逻辑，因此这里是可行的
                         ThrowingRunnable.unchecked(
+                                        // 调用 createNewJobMasterServiceProcess 方法创建新实例
                                         () -> createNewJobMasterServiceProcess(leaderSessionId))
                                 .run(),
                 "create new job master service process");
@@ -347,10 +356,21 @@ public class JobMasterServiceLeadershipRunner implements JobManagerRunner, Leade
                                         new JobAlreadyDoneException(getJobID())))));
     }
 
+    /**
+     * 创建一个新的 JobMasterServiceProcess 实例。
+     * 该方法会先确保当前的 JobMasterServiceProcess 已经关闭，
+     * 然后创建一个新的实例，并进行相关的初始化操作，
+     * 如转发 JobMasterGatewayFuture、结果未来以及确认领导权。
+     *
+     * @param leaderSessionId 领导会话的唯一标识符，用于标识本次领导权的会话
+     */
     @GuardedBy("lock")
     private void createNewJobMasterServiceProcess(UUID leaderSessionId) {
+        // 检查当前的 JobMasterServiceProcess 是否已经关闭
+        // 若未关闭，会抛出 IllegalStateException 异常
         Preconditions.checkState(jobMasterServiceProcess.closeAsync().isDone());
 
+        // 记录日志，表明当前实例已被授予领导权，并即将创建新的 JobMasterServiceProcess
         LOG.info(
                 "{} for job {} was granted leadership with leader id {}. Creating new {}.",
                 getClass().getSimpleName(),
@@ -358,14 +378,18 @@ public class JobMasterServiceLeadershipRunner implements JobManagerRunner, Leade
                 leaderSessionId,
                 JobMasterServiceProcess.class.getSimpleName());
 
+        // 使用工厂方法创建一个新的 JobMasterServiceProcess 实例
         jobMasterServiceProcess = jobMasterServiceProcessFactory.create(leaderSessionId);
 
+        // 如果当前实例仍然是有效的领导者，则将 JobMasterServiceProcess 的 JobMasterGatewayFuture 转发到本地的 jobMasterGatewayFuture
         forwardIfValidLeader(
                 leaderSessionId,
                 jobMasterServiceProcess.getJobMasterGatewayFuture(),
                 jobMasterGatewayFuture,
                 "JobMasterGatewayFuture from JobMasterServiceProcess");
+        // 转发 JobMasterServiceProcess 的结果未来，当作业完成时进行相应处理
         forwardResultFuture(leaderSessionId, jobMasterServiceProcess.getResultFuture());
+        // 确认领导权，将 JobMasterServiceProcess 的领导地址发送给领导者选举服务
         confirmLeadership(leaderSessionId, jobMasterServiceProcess.getLeaderAddressFuture());
     }
 
