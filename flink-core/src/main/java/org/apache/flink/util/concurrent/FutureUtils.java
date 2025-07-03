@@ -1039,16 +1039,28 @@ public class FutureUtils {
     }
 
     /**
-     * This function takes a {@link CompletableFuture} and a consumer to accept the result of this
-     * future. If the input future is already done, this function returns {@link
-     * CompletableFuture#thenAccept(Consumer)}. Otherwise, the return value is {@link
-     * CompletableFuture#thenAcceptAsync(Consumer, Executor)} with the given executor.
+     * 根据给定的 {@code CompletableFuture} 是否已经完成，来决定是同步还是异步执行一个 {@code Consumer} 动作。
      *
-     * @param completableFuture the completable future for which we want to call #thenAccept.
-     * @param executor the executor to run the thenAccept function if the future is not yet done.
-     * @param consumer the consumer function to call when the future is completed.
-     * @param <IN> type of the input future.
-     * @return the new completion stage.
+     * <p><b>工作机制:</b>
+     * <ol>
+     *   <li>检查输入的 {@code completableFuture} 是否已经处于“完成”状态 (无论是正常完成、异常完成还是被取消)。
+     *   <li><b>如果 future 已经完成 ({@code isDone() == true})</b>:
+     *       它会立即在当前线程中同步执行 {@code consumer.accept(result)}。这等同于直接调用 {@link CompletableFuture#thenAccept(Consumer)}。
+     *       这样做可以避免不必要的线程切换和调度开销，提高效率。
+     *   </li>
+     *   <li><b>如果 future 尚未完成 ({@code isDone() == false})</b>:
+     *       它会返回一个新的 {@code CompletableFuture}，并安排当原始 future 完成时，在指定的 {@code executor} 线程池中异步执行
+     *       {@code consumer}。这等同于调用 {@link CompletableFuture#thenAcceptAsync(Consumer, Executor)}。
+     *   </li>
+     * </ol>
+     *
+     * <p>这个方法在需要对 Future 结果进行处理，但又不希望在 Future 已经完成的情况下引入异步开销的场景中非常有用。
+     *
+     * @param completableFuture 我们要消费其结果的 {@code CompletableFuture}。
+     * @param executor 如果 {@code completableFuture} 尚未完成，则用于异步执行 {@code consumer} 的执行器。
+     * @param consumer 当 future 正常完成时，用于处理其结果的 {@code Consumer}。
+     * @param <IN> 输入 future 的结果类型。
+     * @return 一个新的 {@code CompletableFuture<Void>}，它将在 {@code consumer} 执行完毕后完成。
      */
     public static <IN> CompletableFuture<Void> thenAcceptAsyncIfNotDone(
             CompletableFuture<IN> completableFuture,

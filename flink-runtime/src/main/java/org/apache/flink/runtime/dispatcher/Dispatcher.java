@@ -1646,6 +1646,10 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         return optionalJobInformation;
     }
 
+    /**
+     * waitForTerminatingJob 方法确保在提交新作业之前，前一个使用相同作业 ID 的作业管理器已经成功终止。
+     * 若终止过程出现异常，会抛出明确的错误信息；若终止成功，则执行传入的操作。
+     * */
     private CompletableFuture<Void> waitForTerminatingJob(
             JobID jobId, ExecutionPlan executionPlan, ThrowingConsumer<ExecutionPlan, ?> action) {
         final CompletableFuture<Void> jobManagerTerminationFuture =
