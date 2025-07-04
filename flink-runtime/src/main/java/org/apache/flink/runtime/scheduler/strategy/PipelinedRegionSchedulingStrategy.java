@@ -227,7 +227,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
         while (!nextRegions.isEmpty()) {
             nextRegions = addSchedulableAndGetNextRegions(nextRegions, regionsToSchedule);
         }
-        // schedule regions in topological order.
+        // schedule regions in topological order
         SchedulingStrategyUtils.sortPipelinedRegionsInTopologicalOrder(
                         schedulingTopology, regionsToSchedule)
                 .forEach(this::scheduleRegion);

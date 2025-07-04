@@ -85,16 +85,19 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
             final BlocklistOperations blocklistOperations)
             throws Exception {
         JobGraph jobGraph;
-
+        // 根据执行计划的类型获取作业图
         if (executionPlan instanceof JobGraph) {
+            // 若执行计划本身就是 JobGraph 类型，直接赋值
             jobGraph = (JobGraph) executionPlan;
         } else if (executionPlan instanceof StreamGraph) {
+            // 若执行计划是 StreamGraph 类型，调用 getJobGraph 方法转换为 JobGraph
             jobGraph = ((StreamGraph) executionPlan).getJobGraph(userCodeLoader);
         } else {
             throw new FlinkException(
                     "Unsupported execution plan " + executionPlan.getClass().getCanonicalName());
         }
 
+        // 从插槽池服务中获取 SlotPool 实例，若无法获取则抛出异常
         final SlotPool slotPool =
                 slotPoolService
                         .castInto(SlotPool.class)
@@ -103,6 +106,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                                         new IllegalStateException(
                                                 "The DefaultScheduler requires a SlotPool."));
 
+        // 创建调度组件，包含启动动作、调度策略工厂和分配器工厂等
         final DefaultSchedulerComponents schedulerComponents =
                 createSchedulerComponents(
                         jobGraph.getJobType(),
@@ -110,6 +114,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                         jobMasterConfiguration,
                         slotPool,
                         slotRequestTimeout);
+        // 根据作业配置和检查点启用状态创建重启退避时间策略
         final RestartBackoffTimeStrategy restartBackoffTimeStrategy =
                 RestartBackoffTimeStrategyFactoryLoader.createRestartBackoffTimeStrategyFactory(
                                 jobGraph.getJobConfiguration(),
@@ -122,6 +127,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                 jobGraph.getName(),
                 jobGraph.getJobID());
 
+        // 创建执行图工厂，用于生成执行图
         final ExecutionGraphFactory executionGraphFactory =
                 new DefaultExecutionGraphFactory(
                         jobMasterConfiguration,
@@ -135,10 +141,12 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                         shuffleMaster,
                         partitionTracker);
 
+        // 创建检查点清理器，根据配置决定清理模式
         final CheckpointsCleaner checkpointsCleaner =
                 new CheckpointsCleaner(
                         jobMasterConfiguration.get(CheckpointingOptions.CLEANER_PARALLEL_MODE));
 
+        // 创建并返回 DefaultScheduler 实例
         return new DefaultScheduler(
                 log,
                 jobGraph,

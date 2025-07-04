@@ -1395,6 +1395,11 @@ public class AdaptiveScheduler
                                         executionGraph, schedulingPlan));
     }
 
+    /**
+     * 给任务分配slot资源
+     * @param executionGraphWithVertexParallelism 任务的执行图和并行度
+     * @return 分配结果
+     * */
     @Override
     public CreatingExecutionGraph.AssignmentResult tryToAssignSlots(
             CreatingExecutionGraph.ExecutionGraphWithVertexParallelism
