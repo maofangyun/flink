@@ -287,6 +287,13 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                 .build();
     }
 
+    /**
+     * 初始化 REST 处理程序列表。该方法会创建各种 REST 处理程序，并将它们添加到一个列表中，
+     * 最终返回这个列表，用于配置 REST 服务器端点。
+     *
+     * @param localAddressFuture 一个 CompletableFuture，用于异步获取本地 REST 服务器的地址
+     * @return 包含 REST 处理程序规范和对应通道入站处理程序的元组列表
+     */
     @Override
     protected List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> initializeHandlers(
             final CompletableFuture<String> localAddressFuture) {

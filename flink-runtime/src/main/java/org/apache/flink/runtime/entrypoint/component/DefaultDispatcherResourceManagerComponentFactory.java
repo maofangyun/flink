@@ -117,19 +117,27 @@ public class DefaultDispatcherResourceManagerComponentFactory
             FatalErrorHandler fatalErrorHandler)
             throws Exception {
 
+        // 初始化 LeaderRetrievalService 用于获取 Dispatcher 的 Leader 信息
         LeaderRetrievalService dispatcherLeaderRetrievalService = null;
+        // 初始化 LeaderRetrievalService 用于获取 ResourceManager 的 Leader 信息
         LeaderRetrievalService resourceManagerRetrievalService = null;
+        // 初始化 Web 监控端点
         WebMonitorEndpoint<?> webMonitorEndpoint = null;
+        // 初始化资源管理器服务
         ResourceManagerService resourceManagerService = null;
+        // 初始化调度器运行器
         DispatcherRunner dispatcherRunner = null;
 
         try {
+            // 从高可用服务中获取 Dispatcher 的 Leader 检索服务
             dispatcherLeaderRetrievalService =
                     highAvailabilityServices.getDispatcherLeaderRetriever();
 
+            // 从高可用服务中获取 ResourceManager 的 Leader 检索服务
             resourceManagerRetrievalService =
                     highAvailabilityServices.getResourceManagerLeaderRetriever();
 
+            // 创建 Dispatcher 网关的 Leader 网关检索器
             final LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever =
                     new RpcGatewayRetriever<>(
                             rpcService,
@@ -138,6 +146,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
+            // 创建 ResourceManager 网关的 Leader 网关检索器
             final LeaderGatewayRetriever<ResourceManagerGateway> resourceManagerGatewayRetriever =
                     new RpcGatewayRetriever<>(
                             rpcService,
@@ -146,14 +155,17 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
+            // 创建 Web 监控端点的执行器服务
             final ScheduledExecutorService executor =
                     WebMonitorEndpoint.createExecutorService(
                             configuration.get(RestOptions.SERVER_NUM_THREADS),
                             configuration.get(RestOptions.SERVER_THREAD_PRIORITY),
                             "DispatcherRestEndpoint");
 
+            // 获取指标获取器的更新间隔
             final long updateInterval =
                     configuration.get(MetricOptions.METRIC_FETCHER_UPDATE_INTERVAL).toMillis();
+            // 根据更新间隔创建指标获取器
             final MetricFetcher metricFetcher =
                     updateInterval == 0
                             ? VoidMetricFetcher.INSTANCE
@@ -163,6 +175,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
                                     dispatcherGatewayRetriever,
                                     executor);
 
+            // 通过 REST 端点工厂创建 Web 监控端点
             webMonitorEndpoint =
                     restEndpointFactory.createRestEndpoint(
                             configuration,
@@ -174,11 +187,15 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             highAvailabilityServices.getClusterRestEndpointLeaderElection(),
                             fatalErrorHandler);
 
+            // 记录日志，开始启动 Dispatcher REST 端点
             log.debug("Starting Dispatcher REST endpoint.");
+            // 启动 Web 监控端点
             webMonitorEndpoint.start();
 
+            // 获取 RPC 服务的主机名
             final String hostname = RpcUtils.getHostname(rpcService);
 
+            // 创建资源管理器服务
             resourceManagerService =
                     ResourceManagerServiceImpl.create(
                             resourceManagerFactory,
@@ -195,14 +212,17 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             hostname,
                             ioExecutor);
 
+            // 创建历史服务器归档器
             final HistoryServerArchivist historyServerArchivist =
                     HistoryServerArchivist.createHistoryServerArchivist(
                             configuration, webMonitorEndpoint, ioExecutor);
 
+            // 创建调度器操作缓存
             final DispatcherOperationCaches dispatcherOperationCaches =
                     new DispatcherOperationCaches(
                             configuration.get(RestOptions.ASYNC_OPERATION_STORE_DURATION));
 
+            // 创建部分调度器服务
             final PartialDispatcherServices partialDispatcherServices =
                     new PartialDispatcherServices(
                             configuration,
@@ -221,7 +241,9 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             dispatcherOperationCaches,
                             failureEnrichers);
 
+            // 记录日志，开始启动 Dispatcher
             log.debug("Starting Dispatcher.");
+            // 通过调度器运行器工厂创建调度器运行器并启动
             dispatcherRunner =
                     dispatcherRunnerFactory.createDispatcherRunner(
                             highAvailabilityServices.getDispatcherLeaderElection(),
@@ -231,12 +253,17 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             rpcService,
                             partialDispatcherServices);
 
+            // 记录日志，开始启动 ResourceManagerService
             log.debug("Starting ResourceManagerService.");
+            // 启动资源管理器服务
             resourceManagerService.start();
 
+            // 启动 ResourceManager 的 Leader 检索服务
             resourceManagerRetrievalService.start(resourceManagerGatewayRetriever);
+            // 启动 Dispatcher 的 Leader 检索服务
             dispatcherLeaderRetrievalService.start(dispatcherGatewayRetriever);
 
+            // 创建并返回调度器和资源管理器组件
             return new DispatcherResourceManagerComponent(
                     dispatcherRunner,
                     resourceManagerService,
@@ -247,20 +274,29 @@ public class DefaultDispatcherResourceManagerComponentFactory
                     dispatcherOperationCaches);
 
         } catch (Exception exception) {
-            // clean up all started components
+            // 出现异常时，清理所有已启动的组件
+
+            // 停止 Dispatcher 的 Leader 检索服务
             if (dispatcherLeaderRetrievalService != null) {
                 try {
                     dispatcherLeaderRetrievalService.stop();
                 } catch (Exception e) {
-                    exception = ExceptionUtils.firstOrSuppressed(e, exception);
+                    // 捕获停止过程中可能出现的异常，使用 ExceptionUtils 合并异常
+                    // 原代码存在赋值给 catch 块形参的问题，可通过引入新变量解决
+                    Exception combinedException = ExceptionUtils.firstOrSuppressed(e, exception);
+                    exception = combinedException;
                 }
             }
 
+            // 停止 ResourceManager 的 Leader 检索服务
             if (resourceManagerRetrievalService != null) {
                 try {
                     resourceManagerRetrievalService.stop();
                 } catch (Exception e) {
-                    exception = ExceptionUtils.firstOrSuppressed(e, exception);
+                    // 捕获停止过程中可能出现的异常，使用 ExceptionUtils 合并异常
+                    // 原代码存在赋值给 catch 块形参的问题，可通过引入新变量解决
+                    Exception combinedException = ExceptionUtils.firstOrSuppressed(e, exception);
+                    exception = combinedException;
                 }
             }
 

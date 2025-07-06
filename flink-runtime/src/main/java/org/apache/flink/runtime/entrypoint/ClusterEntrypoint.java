@@ -220,31 +220,45 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
         return terminationFuture;
     }
 
+    /**
+     * 启动集群入口点。该方法负责初始化集群所需的各项服务，
+     * 若在初始化过程中出现异常，会尝试进行清理操作并抛出集群入口点异常。
+     *
+     * @throws ClusterEntrypointException 当集群入口点初始化失败时抛出此异常
+     */
     public void startCluster() throws ClusterEntrypointException {
+        // 记录日志，表明开始启动集群入口点
         LOG.info("Starting {}.", getClass().getSimpleName());
 
         try {
+            // 根据配置设置 Flink 安全管理器
             FlinkSecurityManager.setFromConfiguration(configuration);
+            // 从根文件夹创建插件管理器
             PluginManager pluginManager =
                     PluginUtils.createPluginManagerFromRootFolder(configuration);
+            // 配置文件系统
             configureFileSystems(configuration, pluginManager);
 
+            // 安装安全上下文并获取安全上下文实例
             SecurityContext securityContext = installSecurityContext(configuration);
 
+            // 配置未捕获异常处理器
             ClusterEntrypointUtils.configureUncaughtExceptionHandler(configuration);
+            // 在安全上下文中执行集群启动操作
             securityContext.runSecured(
                     (Callable<Void>)
                             () -> {
+                                // 运行集群相关服务
                                 runCluster(configuration, pluginManager);
-
                                 return null;
                             });
         } catch (Throwable t) {
+            // 去除 UndeclaredThrowableException 包装，获取实际异常
             final Throwable strippedThrowable =
                     ExceptionUtils.stripException(t, UndeclaredThrowableException.class);
 
             try {
-                // clean up any partial state
+                // 清理任何部分初始化的状态，在指定超时时间内等待清理完成
                 shutDownAsync(
                                 ApplicationStatus.FAILED,
                                 ShutdownBehaviour.GRACEFUL_SHUTDOWN,
@@ -252,9 +266,11 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                                 false)
                         .get(INITIALIZATION_SHUTDOWN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                // 将清理过程中出现的异常添加到原始异常的抑制列表中
                 strippedThrowable.addSuppressed(e);
             }
 
+            // 抛出集群入口点异常，包含初始化失败的信息和实际异常
             throw new ClusterEntrypointException(
                     String.format(
                             "Failed to initialize the cluster entrypoint %s.",
@@ -281,15 +297,27 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
         return SecurityUtils.getInstalledContext();
     }
 
+    /**
+     * 运行集群相关服务。该方法负责初始化集群服务，创建调度器和资源管理器组件，
+     * 并监听组件的关闭事件，根据不同情况触发集群关闭操作。
+     *
+     * @param configuration 集群配置信息
+     * @param pluginManager 插件管理器
+     * @throws Exception 初始化或创建组件过程中可能抛出的异常
+     */
     private void runCluster(Configuration configuration, PluginManager pluginManager)
             throws Exception {
+        // 使用锁确保在多线程环境下，集群服务初始化和组件创建操作的线程安全
         synchronized (lock) {
+            // 初始化集群所需的各项服务，如高可用服务、Blob 服务器等
             initializeServices(configuration, pluginManager);
 
+            // 创建调度器和资源管理器组件工厂
             final DispatcherResourceManagerComponentFactory
                     dispatcherResourceManagerComponentFactory =
                             createDispatcherResourceManagerComponentFactory(configuration);
 
+            // 通过组件工厂创建调度器和资源管理器组件
             clusterComponent =
                     dispatcherResourceManagerComponentFactory.create(
                             configuration,
@@ -307,20 +335,22 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                             failureEnrichers,
                             this);
 
+            // 监听调度器和资源管理器组件的关闭事件
             clusterComponent
                     .getShutDownFuture()
                     .whenComplete(
                             (ApplicationStatus applicationStatus, Throwable throwable) -> {
+                                // 如果关闭过程中出现异常
                                 if (throwable != null) {
+                                    // 以未知应用状态、优雅关闭行为和异常信息触发集群关闭操作，不清理高可用数据
                                     shutDownAsync(
                                             ApplicationStatus.UNKNOWN,
                                             ShutdownBehaviour.GRACEFUL_SHUTDOWN,
                                             ExceptionUtils.stringifyException(throwable),
                                             false);
                                 } else {
-                                    // This is the general shutdown path. If a separate more
-                                    // specific shutdown was
-                                    // already triggered, this will do nothing
+                                    // 正常关闭情况，使用组件返回的应用状态、优雅关闭行为触发集群关闭操作，清理高可用数据
+                                    // 这是通用的关闭路径，如果已经触发了更具体的关闭操作，这里将不做任何处理
                                     shutDownAsync(
                                             applicationStatus,
                                             ShutdownBehaviour.GRACEFUL_SHUTDOWN,

@@ -105,18 +105,31 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
     //  ResourceManagerService
     // ------------------------------------------------------------------------
 
+    /**
+     * 启动资源管理器服务。若服务已经启动，则仅记录调试日志并返回；
+     * 若服务未启动，则将服务状态标记为运行中，并启动领导者选举流程。
+     *
+     * @throws Exception 启动领导者选举过程中可能抛出的异常
+     */
     @Override
     public void start() throws Exception {
+        // 使用同步块确保线程安全，避免多个线程同时启动服务
         synchronized (lock) {
+            // 检查服务是否已经处于运行状态
             if (running) {
+                // 若服务已启动，记录调试日志并直接返回
                 LOG.debug("Resource manager service has already started.");
                 return;
             }
+            // 将服务状态标记为运行中
             running = true;
         }
 
+        // 记录信息日志，表明开始启动资源管理器服务
         LOG.info("Starting resource manager service.");
 
+        // 调用领导者选举服务的 startLeaderElection 方法，开始领导者选举流程
+        // 传入 this 表示当前类实例作为领导者竞争者参与选举
         leaderElection.startLeaderElection(this);
     }
 

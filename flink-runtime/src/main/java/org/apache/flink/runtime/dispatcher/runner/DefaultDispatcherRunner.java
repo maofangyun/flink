@@ -226,6 +226,16 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
                         exception));
     }
 
+    /**
+     * 静态工厂方法，用于创建一个 {@link DispatcherRunner} 实例并启动它。
+     * 该方法会初始化一个 {@link DefaultDispatcherRunner} 实例，然后调用其 start 方法启动领导者选举流程。
+     *
+     * @param leaderElection 用于调度器的领导者选举服务，负责选举出调度器的领导者
+     * @param fatalErrorHandler 致命错误处理器，用于处理运行过程中出现的致命错误
+     * @param dispatcherLeaderProcessFactory 调度器领导者进程工厂，用于创建调度器领导者进程
+     * @return 新创建并启动的 {@link DispatcherRunner} 实例
+     * @throws Exception 创建或启动过程中可能抛出的异常
+     */
     public static DispatcherRunner create(
             LeaderElection leaderElection,
             FatalErrorHandler fatalErrorHandler,
@@ -234,6 +244,7 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
         final DefaultDispatcherRunner dispatcherRunner =
                 new DefaultDispatcherRunner(
                         leaderElection, fatalErrorHandler, dispatcherLeaderProcessFactory);
+        // 调用 DefaultDispatcherRunner 实例的 start 方法，启动领导者选举流程
         dispatcherRunner.start();
         return dispatcherRunner;
     }

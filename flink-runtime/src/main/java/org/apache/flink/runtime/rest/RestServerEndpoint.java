@@ -170,45 +170,60 @@ public abstract class RestServerEndpoint implements RestService {
             initializeHandlers(final CompletableFuture<String> localAddressFuture);
 
     /**
-     * Starts this REST server endpoint.
+     * 启动此 REST 服务器端点。
      *
-     * @throws Exception if we cannot start the RestServerEndpoint
+     * @throws Exception 如果无法启动 RestServerEndpoint 则抛出异常
      */
     public final void start() throws Exception {
+        // 使用锁确保线程安全，避免多个线程同时启动服务器端点
         synchronized (lock) {
+            // 检查服务器端点状态，确保其处于初始创建状态，不允许重复启动
             Preconditions.checkState(
                     state == State.CREATED, "The RestServerEndpoint cannot be restarted.");
 
+            // 记录日志，表明开始启动 REST 服务器端点
             log.info("Starting rest endpoint.");
 
+            // 创建一个路由器实例，用于处理不同路径的请求
+            // 注意：这里使用了原始类型，建议指定泛型参数以避免潜在问题
             final Router router = new Router();
+            // 创建一个 CompletableFuture 用于异步获取 REST 服务器的地址
             final CompletableFuture<String> restAddressFuture = new CompletableFuture<>();
 
+            // 调用抽象方法初始化所有的 REST 处理程序
             handlers = initializeHandlers(restAddressFuture);
 
-            /* sort the handlers such that they are ordered the following:
+            /* 对处理程序进行排序，使其按照以下顺序排列:
              * /jobs
              * /jobs/overview
              * /jobs/:jobid
              * /jobs/:jobid/config
              * /:*
              */
+            // 注意：Collections.sort 可以替换为 List.sort 以提高代码的现代性
             Collections.sort(handlers, RestHandlerUrlComparator.INSTANCE);
 
+            // 检查所有端点和处理程序是否唯一，避免重复注册
             checkAllEndpointsAndHandlersAreUnique(handlers);
+            // 遍历所有处理程序，将其注册到路由器中
             handlers.forEach(handler -> registerHandler(router, handler, log));
 
+            // 创建多部分路由，用于处理文件上传等多部分请求
             MultipartRoutes multipartRoutes = createMultipartRoutes(handlers);
+            // 记录调试日志，显示使用的多部分路由信息
             log.debug("Using {} for FileUploadHandler", multipartRoutes);
 
+            // 创建一个 ChannelInitializer 用于初始化新连接的 Channel 管道
+            // 注意：显式类型实参 SocketChannel 可被替换为 <>
             ChannelInitializer<SocketChannel> initializer =
                     new ChannelInitializer<SocketChannel>() {
 
                         @Override
                         protected void initChannel(SocketChannel ch) throws ConfigurationException {
+                            // 创建一个路由器处理程序，用于处理路由请求
                             RouterHandler handler = new RouterHandler(router, responseHeaders);
 
-                            // SSL should be the first handler in the pipeline
+                            // SSL 处理器应该是管道中的第一个处理器
                             if (isHttpsEnabled()) {
                                 ch.pipeline()
                                         .addLast(
@@ -219,6 +234,7 @@ public abstract class RestServerEndpoint implements RestService {
                                                         sslHandlerFactory));
                             }
 
+                            // 依次添加 HTTP 服务器编解码器、文件上传处理程序和 HTTP 对象聚合器到管道中
                             ch.pipeline()
                                     .addLast(new HttpServerCodec())
                                     .addLast(new FileUploadHandler(uploadDir, multipartRoutes))
@@ -226,15 +242,19 @@ public abstract class RestServerEndpoint implements RestService {
                                             new FlinkHttpObjectAggregator(
                                                     maxContentLength, responseHeaders));
 
+                            // 遍历所有入站通道处理程序工厂，创建并添加处理程序到管道中
                             for (InboundChannelHandlerFactory factory :
                                     inboundChannelHandlerFactories) {
+                                // 通过工厂创建通道处理程序
                                 Optional<ChannelHandler> channelHandler =
                                         factory.createHandler(configuration, responseHeaders);
+                                // 注意：if (channelHandler.isPresent()) 可被替换为函数样式的单个表达式
                                 if (channelHandler.isPresent()) {
                                     ch.pipeline().addLast(channelHandler.get());
                                 }
                             }
 
+                            // 依次添加分块写入处理程序、路由器处理程序和管道错误处理程序到管道中
                             ch.pipeline()
                                     .addLast(new ChunkedWriteHandler())
                                     .addLast(handler.getName(), handler)
@@ -242,77 +262,103 @@ public abstract class RestServerEndpoint implements RestService {
                         }
                     };
 
+            // 创建一个单线程的 NioEventLoopGroup 作为 boss 组，用于接受新连接
             NioEventLoopGroup bossGroup =
                     new NioEventLoopGroup(
                             1, new ExecutorThreadFactory("flink-rest-server-netty-boss"));
+            // 创建一个 NioEventLoopGroup 作为 worker 组，用于处理连接的读写操作
             NioEventLoopGroup workerGroup =
                     new NioEventLoopGroup(
                             0, new ExecutorThreadFactory("flink-rest-server-netty-worker"));
 
+            // 创建一个 ServerBootstrap 用于启动 Netty 服务器
             bootstrap = new ServerBootstrap();
+            // 配置 ServerBootstrap 的 boss 组和 worker 组，指定通道类型和子处理器
             bootstrap
                     .group(bossGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)
                     .childHandler(initializer);
 
+            // 从配置的端口范围字符串中获取可用端口的迭代器
             Iterator<Integer> portsIterator;
             try {
                 portsIterator = NetUtils.getPortRangeFromString(restBindPortRange);
             } catch (IllegalConfigurationException e) {
+                // 重新抛出非法配置异常
                 throw e;
             } catch (Exception e) {
+                // 若解析端口范围失败，抛出非法参数异常
                 throw new IllegalArgumentException(
                         "Invalid port range definition: " + restBindPortRange);
             }
 
+            // 记录最终选择的端口号
             int chosenPort = 0;
+            // 遍历可用端口，尝试绑定服务器
             while (portsIterator.hasNext()) {
                 try {
+                    // 获取下一个可用端口
                     chosenPort = portsIterator.next();
                     final ChannelFuture channel;
                     if (restBindAddress == null) {
+                        // 若未指定绑定地址，则绑定到所有可用网络接口
                         channel = bootstrap.bind(chosenPort);
                     } else {
+                        // 若指定了绑定地址，则绑定到指定地址和端口
                         channel = bootstrap.bind(restBindAddress, chosenPort);
                     }
+                    // 同步等待绑定操作完成，并获取服务器 Channel
                     serverChannel = channel.syncUninterruptibly().channel();
+                    // 若绑定成功，跳出循环
                     break;
                 } catch (final Exception e) {
-                    // syncUninterruptibly() throws checked exceptions via Unsafe
-                    // continue if the exception is due to the port being in use, fail early
-                    // otherwise
+                    // syncUninterruptibly() 通过 Unsafe 抛出受检查异常
+                    // 若异常不是端口被占用导致的 BindException，则立即失败
+                    // 注意：条件 '!(e instanceof java.net.BindException)' 始终为 'true'，可能存在逻辑错误
                     if (!(e instanceof java.net.BindException)) {
                         throw e;
                     }
                 }
             }
 
+            // 若遍历所有端口后仍未成功绑定，则抛出 BindException
             if (serverChannel == null) {
                 throw new BindException(
                         "Could not start rest endpoint on any port in port range "
                                 + restBindPortRange);
             }
 
+            // 记录调试日志，显示绑定的地址和端口
             log.debug("Binding rest endpoint to {}:{}.", restBindAddress, chosenPort);
 
+            // 获取服务器绑定的本地地址
             final InetSocketAddress bindAddress = (InetSocketAddress) serverChannel.localAddress();
+            // 确定要公开的服务器地址
             final String advertisedAddress;
             if (bindAddress.getAddress().isAnyLocalAddress()) {
+                // 若绑定到任意本地地址，则使用配置的 REST 地址
                 advertisedAddress = this.restAddress;
             } else {
+                // 否则使用实际绑定的 IP 地址
                 advertisedAddress = bindAddress.getAddress().getHostAddress();
             }
 
+            // 记录服务器端口号
             port = bindAddress.getPort();
 
+            // 记录日志，显示 REST 服务器监听的地址和端口
             log.info("Rest endpoint listening at {}:{}", advertisedAddress, port);
 
+            // 构建 REST 服务器的基础 URL
             restBaseUrl = new URL(determineProtocol(), advertisedAddress, port, "").toString();
 
+            // 完成 CompletableFuture，将 REST 基础 URL 传递给相关处理程序
             restAddressFuture.complete(restBaseUrl);
 
+            // 将服务器端点状态设置为运行中
             state = State.RUNNING;
 
+            // 调用抽象方法启动子类特定的服务
             startInternal();
         }
     }

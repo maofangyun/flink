@@ -78,16 +78,28 @@ public final class JobSubmitHandler
         this.configuration = configuration;
     }
 
+    /**
+     * 处理作业提交请求的核心方法。该方法会对上传的文件进行验证，加载执行计划，
+     * 上传作业相关文件，最后将作业提交到调度器网关。
+     *
+     * @param request 包含作业提交请求体和上传文件的处理请求对象
+     * @param gateway 调度器网关，用于与调度器进行交互
+     * @return 一个 CompletableFuture，异步返回作业提交的响应体
+     * @throws RestHandlerException 当请求处理过程中出现错误时抛出此异常
+     */
     @Override
     protected CompletableFuture<JobSubmitResponseBody> handleRequest(
             @Nonnull HandlerRequest<JobSubmitRequestBody> request,
             @Nonnull DispatcherGateway gateway)
             throws RestHandlerException {
+        // 获取请求中上传的文件集合
         final Collection<File> uploadedFiles = request.getUploadedFiles();
+        // 将上传的文件集合转换为映射，键为文件名，值为对应的本地文件路径
         final Map<String, Path> nameToFile =
                 uploadedFiles.stream()
                         .collect(Collectors.toMap(File::getName, Path::fromLocalFile));
 
+        // 检查上传文件的数量和映射的大小是否一致，若不一致则抛出异常
         if (uploadedFiles.size() != nameToFile.size()) {
             throw new RestHandlerException(
                     String.format(
@@ -98,8 +110,10 @@ public final class JobSubmitHandler
                     HttpResponseStatus.BAD_REQUEST);
         }
 
+        // 获取作业提交请求体
         final JobSubmitRequestBody requestBody = request.getRequestBody();
 
+        // 检查请求体中的执行计划文件名是否为空，若为空则抛出异常
         if (requestBody.executionPlanFileName == null) {
             throw new RestHandlerException(
                     String.format(
@@ -108,22 +122,28 @@ public final class JobSubmitHandler
                     HttpResponseStatus.BAD_REQUEST);
         }
 
+        // 异步加载执行计划
         CompletableFuture<ExecutionPlan> executionPlanFuture =
                 loadExecutionPlan(requestBody, nameToFile);
 
+        // 获取需要上传的 JAR 文件路径集合
         Collection<Path> jarFiles = getJarFilesToUpload(requestBody.jarFileNames, nameToFile);
 
+        // 获取需要上传的分布式缓存文件路径集合
         Collection<Tuple2<String, Path>> artifacts =
                 getArtifactFilesToUpload(requestBody.artifactFileNames, nameToFile);
 
+        // 异步上传作业执行计划文件，并返回最终的执行计划
         CompletableFuture<ExecutionPlan> finalizedExecutionPlanFuture =
                 uploadExecutionPlanFiles(
                         gateway, executionPlanFuture, jarFiles, artifacts, configuration);
 
+        // 异步提交作业到调度器网关
         CompletableFuture<Acknowledge> jobSubmissionFuture =
                 finalizedExecutionPlanFuture.thenCompose(
                         executionPlan -> gateway.submitJob(executionPlan, timeout));
 
+        // 当作业提交成功且执行计划加载完成后，构建并返回作业提交响应体
         return jobSubmissionFuture.thenCombine(
                 executionPlanFuture,
                 (ack, executionPlan) ->

@@ -237,7 +237,7 @@ io:
 #     # thread. You can include the same directory multiple times in order to create
 #     # multiple I/O threads against that directory. This is for example relevant for
 #     # high-throughput RAIDs.
-     dirs: D:\tmp
+     dirs: /tmp
 
 # classloader:
 #   resolve:

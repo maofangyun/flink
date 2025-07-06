@@ -72,25 +72,44 @@ public class RouterHandler extends SimpleChannelInboundHandler<HttpRequest> {
         return ROUTER_HANDLER_NAME;
     }
 
+    /**
+     * 处理接收到的 HTTP 请求。该方法会先检查是否为 100 Continue 请求，若是则发送继续响应；
+     * 否则对请求进行路由，根据路由结果决定是调用匹配的处理程序还是返回 404 错误响应。
+     *
+     * @param channelHandlerContext 通道处理程序上下文，用于与通道进行交互
+     * @param httpRequest 接收到的 HTTP 请求对象
+     */
     @Override
     protected void channelRead0(
             ChannelHandlerContext channelHandlerContext, HttpRequest httpRequest) {
+        // 检查 HTTP 请求是否包含 100 Continue 期望头
         if (HttpUtil.is100ContinueExpected(httpRequest)) {
+            // 若包含，则向客户端发送 HTTP 100 Continue 响应
             channelHandlerContext.writeAndFlush(
                     new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
+            // 处理完毕，直接返回
             return;
         }
 
-        // Route
+        // 开始路由请求
+        // 获取 HTTP 请求的方法（如 GET、POST 等）
         HttpMethod method = httpRequest.method();
+        // 创建一个查询字符串解码器，用于解析请求 URI 中的查询参数
         QueryStringDecoder qsd = new QueryStringDecoder(httpRequest.uri());
+        // 使用路由器对请求进行路由，获取路由结果
+        // 注意：此处使用原始类型，会有未检查调用的警告，建议指定泛型参数
         RouteResult<?> routeResult = router.route(method, qsd.path(), qsd.parameters());
 
+        // 检查路由结果是否为 null，若为 null 表示未找到匹配的处理程序
         if (routeResult == null) {
+            // 调用 respondNotFound 方法向客户端发送 404 未找到错误响应
             respondNotFound(channelHandlerContext, httpRequest);
+            // 处理完毕，直接返回
             return;
         }
 
+        // 若路由结果不为 null，表示找到了匹配的处理程序
+        // 调用 routed 方法将请求传递给匹配的处理程序进行处理
         routed(channelHandlerContext, routeResult, httpRequest);
     }
 
