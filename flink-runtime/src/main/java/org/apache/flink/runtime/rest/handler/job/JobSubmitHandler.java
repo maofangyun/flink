@@ -141,6 +141,7 @@ public final class JobSubmitHandler
         // 异步提交作业到调度器网关
         CompletableFuture<Acknowledge> jobSubmissionFuture =
                 finalizedExecutionPlanFuture.thenCompose(
+                        // 提交作业到调度器网关
                         executionPlan -> gateway.submitJob(executionPlan, timeout));
 
         // 当作业提交成功且执行计划加载完成后，构建并返回作业提交响应体
