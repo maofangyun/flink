@@ -149,31 +149,33 @@ public class NetUtils {
     }
 
     /**
-     * Calls {@link ServerSocket#accept()} on the provided server socket, suppressing any thrown
-     * {@link SocketTimeoutException}s. This is a workaround for the underlying JDK-8237858 bug in
-     * JDK 11 that can cause errant SocketTimeoutExceptions to be thrown at unexpected times.
+     * 对提供的 ServerSocket 调用 {@link ServerSocket#accept()} 方法，抑制所有抛出的
+     * {@link SocketTimeoutException} 异常。这是针对 JDK 11 中底层 JDK-8237858 漏洞的一种解决办法，
+     * 该漏洞可能会导致在意外时刻抛出错误的 SocketTimeoutException 异常。
      *
-     * <p>This method expects the provided ServerSocket has no timeout set (SO_TIMEOUT of 0),
-     * indicating an infinite timeout. It will suppress all SocketTimeoutExceptions, even if a
-     * ServerSocket with a non-zero timeout is passed in.
+     * <p>此方法要求传入的 ServerSocket 未设置超时（SO_TIMEOUT 为 0），这表示无限期超时。
+     * 即使传入的 ServerSocket 设置了非零超时，该方法也会抑制所有 SocketTimeoutException 异常。
      *
-     * @param serverSocket a ServerSocket with {@link SocketOptions#SO_TIMEOUT SO_TIMEOUT} set to 0;
-     *     if SO_TIMEOUT is greater than 0, then this method will suppress SocketTimeoutException;
-     *     must not be null; SO_TIMEOUT option must be set to 0
-     * @return the new Socket
-     * @throws IOException see {@link ServerSocket#accept()}
+     * @param serverSocket 一个 {@link SocketOptions#SO_TIMEOUT SO_TIMEOUT} 设置为 0 的 ServerSocket；
+     *                     若 SO_TIMEOUT 大于 0，此方法仍会抑制 SocketTimeoutException；
+     *                     不能为 null；SO_TIMEOUT 选项必须设置为 0
+     * @return 新接受的 Socket
+     * @throws IOException 请参考 {@link ServerSocket#accept()}
      * @see <a href="https://bugs.openjdk.java.net/browse/JDK-8237858">JDK-8237858</a>
      */
     public static Socket acceptWithoutTimeout(ServerSocket serverSocket) throws IOException {
+        // 检查 serverSocket 的 SO_TIMEOUT 选项是否为 0，若不为 0 则抛出 IllegalArgumentException 异常
         Preconditions.checkArgument(
                 serverSocket.getSoTimeout() == 0, "serverSocket SO_TIMEOUT option must be 0");
+        // 进入无限循环，不断尝试调用 accept 方法
         while (true) {
             try {
+                // 调用 serverSocket 的 accept 方法，等待客户端连接并返回新的 Socket(没有客户端连接，会一直阻塞)
                 return serverSocket.accept();
             } catch (SocketTimeoutException exception) {
-                // This should be impossible given that the socket timeout is set to zero
-                // which indicates an infinite timeout. This is due to the underlying JDK-8237858
-                // bug. We retry the accept call indefinitely to replicate the expected behavior.
+                // 理论上，当 socket 超时设置为 0（无限超时）时，不应该抛出此异常。
+                // 但由于底层 JDK-8237858 漏洞，可能会出现此异常。
+                // 捕获该异常并忽略，继续重试 accept 调用，以模拟预期的行为。
             }
         }
     }

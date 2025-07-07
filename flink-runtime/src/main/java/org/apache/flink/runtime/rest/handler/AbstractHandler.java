@@ -197,6 +197,7 @@ public abstract class AbstractHandler<
 
             final FileUploads finalUploadedFiles = uploadedFiles;
             requestProcessingFuture
+                    // handle方法结合了 thenApply 和 exceptionally 的功能,无论成功或失败,都会执行
                     .handle(
                             (Void ignored, Throwable throwable) -> {
                                 if (throwable != null) {

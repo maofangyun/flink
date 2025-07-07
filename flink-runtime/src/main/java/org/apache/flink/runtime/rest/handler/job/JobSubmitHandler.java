@@ -160,6 +160,7 @@ public final class JobSubmitHandler
         return CompletableFuture.supplyAsync(
                 () -> {
                     ExecutionPlan executionPlan;
+                    // 反序列化执行计划文件
                     try (ObjectInputStream objectIn =
                             new ObjectInputStream(
                                     executionPlanFile.getFileSystem().open(executionPlanFile))) {
@@ -207,14 +208,17 @@ public final class JobSubmitHandler
             Collection<Path> jarFiles,
             Collection<Tuple2<String, Path>> artifacts,
             Configuration configuration) {
+        // 创建一个立即完成的 CompletableFuture，其结果就是 BlobServer 实例的端口号,
+        // 是一种将同步结果无缝集成到 CompletableFuture 异步编程模型中的便捷方式
         CompletableFuture<Integer> blobServerPortFuture = gateway.getBlobServerPort(timeout);
-
+        // thenCombine 方法会等待两个 CompletableFuture 都成功完成，然后将它们各自的结果作为参数传递给一个 BiFunction，并返回一个新的 CompletableFuture
         return executionPlanFuture.thenCombine(
                 blobServerPortFuture,
                 (ExecutionPlan executionPlan, Integer blobServerPort) -> {
                     final InetSocketAddress address =
                             new InetSocketAddress(gateway.getHostname(), blobServerPort);
                     try {
+                        // 上传web界面或者代码提交的jar包到blobServer中
                         ClientUtils.uploadExecutionPlanFiles(
                                 executionPlan,
                                 jarFiles,

@@ -90,26 +90,39 @@ class BlobServerConnection extends Thread {
     //  Connection / Thread methods
     // --------------------------------------------------------------------------------------------
 
-    /** Main connection work method. Accepts requests until the other side closes the connection. */
+    /**
+     * 主连接工作方法。接受请求直到对方关闭连接。
+     * 该方法会不断从客户端套接字的输入流中读取操作类型，
+     * 根据不同的操作类型调用相应的处理方法，处理客户端的 BLOB 操作请求。
+     */
     @Override
     public void run() {
         try {
+            // 获取客户端套接字的输入流，用于接收客户端发送的请求数据
             final InputStream inputStream = this.clientSocket.getInputStream();
+            // 获取客户端套接字的输出流，用于向客户端发送响应数据
             final OutputStream outputStream = this.clientSocket.getOutputStream();
 
+            // 进入无限循环，持续监听客户端的请求
             while (true) {
-                // Read the requested operation
+                // 从输入流中读取一个字节，该字节代表客户端请求的操作类型
                 final int operation = inputStream.read();
                 if (operation < 0) {
+                    // 当读取到 -1 时，表示输入流已结束，即客户端关闭了连接，此时退出方法
                     // done, no one is asking anything from us
                     return;
                 }
 
+                // 根据读取到的操作类型，执行相应的处理逻辑
                 switch (operation) {
                     case PUT_OPERATION:
+                        // 若操作类型为 PUT，调用 put 方法处理客户端上传 BLOB 的请求
+                        // 传入输入流、输出流和指定大小的缓冲区
                         put(inputStream, outputStream, new byte[BUFFER_SIZE]);
                         break;
                     case GET_OPERATION:
+                        // 若操作类型为 GET，调用 get 方法处理客户端下载 BLOB 的请求
+                        // 传入输入流、输出流和指定大小的缓冲区
                         get(inputStream, outputStream, new byte[BUFFER_SIZE]);
                         break;
                     default:
@@ -125,7 +138,9 @@ class BlobServerConnection extends Thread {
                     clientSocket.getRemoteSocketAddress(),
                     t);
         } finally {
+            // 无论是否发生异常，都静默关闭客户端套接字，避免资源泄漏
             closeSilently(clientSocket, LOG);
+            // 从 Blob 服务器中注销当前连接，更新服务器的连接状态
             blobServer.unregisterConnection(this);
         }
     }

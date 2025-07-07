@@ -187,12 +187,10 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             highAvailabilityServices.getClusterRestEndpointLeaderElection(),
                             fatalErrorHandler);
 
-            // 记录日志，开始启动 Dispatcher REST 端点
             log.debug("Starting Dispatcher REST endpoint.");
             // 启动 Web 监控端点
             webMonitorEndpoint.start();
 
-            // 获取 RPC 服务的主机名
             final String hostname = RpcUtils.getHostname(rpcService);
 
             // 创建资源管理器服务
@@ -241,7 +239,6 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             dispatcherOperationCaches,
                             failureEnrichers);
 
-            // 记录日志，开始启动 Dispatcher
             log.debug("Starting Dispatcher.");
             // 通过调度器运行器工厂创建调度器运行器并启动
             dispatcherRunner =
@@ -253,7 +250,6 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             rpcService,
                             partialDispatcherServices);
 
-            // 记录日志，开始启动 ResourceManagerService
             log.debug("Starting ResourceManagerService.");
             // 启动资源管理器服务
             resourceManagerService.start();
@@ -275,7 +271,6 @@ public class DefaultDispatcherResourceManagerComponentFactory
 
         } catch (Exception exception) {
             // 出现异常时，清理所有已启动的组件
-
             // 停止 Dispatcher 的 Leader 检索服务
             if (dispatcherLeaderRetrievalService != null) {
                 try {

@@ -314,6 +314,7 @@ public class BlobServer extends Thread
         try {
             while (!this.shutdownRequested.get()) {
                 BlobServerConnection conn =
+                        // acceptWithoutTimeout()方法没有客户端连接，会一直阻塞在这里，直到有客户端连接
                         new BlobServerConnection(NetUtils.acceptWithoutTimeout(serverSocket), this);
                 try {
                     synchronized (activeConnections) {
@@ -322,10 +323,12 @@ public class BlobServer extends Thread
                         }
                         activeConnections.add(conn);
                     }
-
+                    // 启动新线程处理客户端连接
                     conn.start();
+                    // 将引用置为 null，避免意外修改，帮助垃圾回收
                     conn = null;
                 } finally {
+                    // 如果连接创建失败，需要关闭连接
                     if (conn != null) {
                         conn.close();
                         synchronized (activeConnections) {
