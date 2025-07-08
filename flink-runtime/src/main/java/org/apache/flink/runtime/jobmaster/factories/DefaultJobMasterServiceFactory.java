@@ -172,7 +172,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
                                 jobMasterConfiguration.getConfiguration()),
                         failureEnrichers,
                         initializationTimestamp);
-
+        // 启动实例，会调用到JobMaster的onStart()方法
         jobMaster.start();
 
         return jobMaster;

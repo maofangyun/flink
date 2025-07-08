@@ -70,7 +70,8 @@ public class WordCount {
         final CLI params = CLI.fromArgs(args);
         // Create the execution environment. This is the main entrypoint
         // to building a Flink application.
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        final StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.createRemoteEnvironment("localhost", 8081);
         env.setParallelism(1);
 
         // For async state, by default we will use the forst state backend.
